@@ -215,6 +215,15 @@ body.dragging{cursor:grabbing;user-select:none;-webkit-user-select:none}
 .toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translate(-50%,12px);max-width:calc(100% - 32px);padding:10px 16px;border-radius:6px;background:var(--fg);color:var(--bg);font-size:14px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;z-index:120}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 @media (prefers-reduced-motion:reduce){.toast{transition:none}}
+.helpfab{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));width:44px;height:44px;border-radius:50%;border:1px solid var(--bd,#888);background:var(--fg);color:var(--bg);font-size:22px;font-weight:700;line-height:1;cursor:pointer;z-index:90;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.helpfab:focus-visible{outline:3px solid #2f6fed;outline-offset:2px}
+.probadge{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:8px;background:#b7791f;color:#fff;font-size:10px;font-weight:700;letter-spacing:.04em;vertical-align:middle}
+.prostat{padding:10px 12px;border-radius:8px;border:1px solid var(--bd,#888);margin:8px 0}
+.helpbox details{border-bottom:1px solid rgba(128,128,128,.35);padding:8px 0}
+.helpbox summary{cursor:pointer;font-weight:700}
+.helpbox p,.helpbox li{font-size:14px;line-height:1.5}
+.helpbox ul{margin:6px 0 6px 18px;padding:0}
+@media print{.helpfab{display:none}}
 </style>
 
 </head><body>
@@ -263,6 +272,7 @@ body.dragging{cursor:grabbing;user-select:none;-webkit-user-select:none}
 </div>
 
 <div class="modal" id="modal" hidden><div class="mbox" id="mbox" role="dialog" aria-modal="true" aria-labelledby="mtitle"></div></div>
+<button class="helpfab" id="helpFab" type="button" aria-label="Help and guide" title="Help and guide">?</button>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
@@ -449,7 +459,7 @@ function ensureWeek(ds){
   S.tables.push(t);S.tables.sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});
   return t;
 }
-function goWeek(ds){var t=ensureWeek(ds);S.active=t.id;save();render();}
+function goWeek(ds){if(!isPro()&&ds!==iso(mondayOf(new Date()))){openUpgradeModal('More than one week');return;}var t=ensureWeek(ds);S.active=t.id;save();render();}
 S.active=ensureWeek(iso(mondayOf(new Date()))).id;
 
 var subj=function(id){return S.subjects.find(function(s){return s.id===id;});};
@@ -660,11 +670,16 @@ function renderToolbar(){
   sLesson.onchange=function(){lessonSel=sLesson.value;render();};
   var cf=computeConflicts(),cn=Object.keys(cf).length;
   var tplBtn=h('button',{class:'btn',type:'button',text:'Start from a template…',onclick:function(){openTemplateModal();}});
-  var shareBtn=h('button',{class:'btn primary',type:'button',text:'Save or share',onclick:function(){openShareModal();}});
-  var printBtn=h('button',{class:'btn',type:'button',text:'Print',onclick:function(){openShareModal(true);}});
-  var availBtn=h('button',{class:'btn',type:'button',text:'Availability',onclick:openAvailModal});
+  proBadge(tplBtn);
+  var shareBtn=h('button',{class:'btn primary',type:'button',text:'Save or share',onclick:function(){if(pro('Save or share'))openShareModal();}});
+  proBadge(shareBtn);
+  var printBtn=h('button',{class:'btn',type:'button',text:'Print',onclick:function(){if(pro('Printing'))openShareModal(true);}});
+  proBadge(printBtn);
+  var availBtn=h('button',{class:'btn',type:'button',text:'Availability',onclick:function(){if(pro('Availability'))openAvailModal();}});
+  proBadge(availBtn);
   var cfBtn=h('button',{class:'btn'+(cn?' warnbtn':''),type:'button',text:cn?cn+' possible conflict'+(cn>1?'s':''):'No conflicts',disabled:!cn,onclick:openConflictsModal});
-  var onceBtn=h('button',{class:'btn',type:'button',text:'+ One-off event',onclick:function(){openEventModal(null);}});
+  var onceBtn=h('button',{class:'btn',type:'button',text:'+ One-off event',onclick:function(){if(pro('One-off events'))openEventModal(null);}});
+  proBadge(onceBtn);
   var fwd=h('button',{class:'btn',type:'button',text:'Use for later weeks',title:'Copy this week\'s lessons onto every later week. One-off events stay where they are.',disabled:!S.tables.some(function(x){return x.date>t.date;})});
   armed(fwd,'Tap again to apply',function(){
     var n=0;
@@ -1011,6 +1026,7 @@ $('#undo').addEventListener('click',undo);
 $('#redo').addEventListener('click',redo);
 $('#backup').addEventListener('click',openBackupModal);
 $('#settingsBtn').addEventListener('click',openSettingsModal);
+$('#helpFab').addEventListener('click',openHelpModal);
 document.addEventListener('keydown',function(e){
   if(!(e.ctrlKey||e.metaKey))return;
   if(!$('#modal').hidden||/INPUT|TEXTAREA|SELECT/.test((e.target.tagName||'')))return;
@@ -1250,6 +1266,7 @@ function openSubjectModal(sid,pre){
   actions.push(h('button',{class:'btn primary',type:'button','data-primary':'1',text:s?'Save':'Add block',onclick:function(){
     var n=name.value.trim();
     if(!n){err.textContent='Give the lesson a name.';name.focus();return;}
+    if(!s&&!isPro()&&S.subjects.length>=FREE.lessons){closeModal();openUpgradeModal('More than '+FREE.lessons+' lesson types');return;}
     var pw=picked(),kid=pw.length===1?kidByName(pw[0]):null,d=+dur.value,wv=W.get();
     commit(function(){
       if(s){s.name=n;s.who=pw;s.c=kid?kid.c:col;s.dur=d;s.mode=wv.mode;s.place=wv.place;s.travel=wv.travel;}
@@ -1259,6 +1276,96 @@ function openSubjectModal(sid,pre){
     if(!s)toast('Block added on the left. Drag it onto the week.');
   }}));
   openModal(s?'Edit lesson block':'New lesson block',body,actions);
+}
+
+
+/* ---- Free / Pro ---- */
+var BUY_URL='https://khanster048.gumroad.com/l/tfmyl';
+var GR_PRODUCT='3KaTEUWM1bqjgD4dT9fpkQ==';
+var GR_KEY='hwp-market-gr';
+var GR_RE=/^[0-9A-F]{8}(-[0-9A-F]{8}){3}$/;
+var LIC_KEY='hwp-market-licence';
+var FREE={kids:2,adults:2,lessons:10};
+var LALPHA='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function licCheck(body){
+  var h32=2166136261,t='HWPv1|'+body;
+  for(var i=0;i<t.length;i++){h32^=t.charCodeAt(i);h32=Math.imul(h32,16777619)>>>0;}
+  var o='';for(var j=0;j<4;j++){o+=LALPHA[h32&31];h32=h32>>>5;}
+  return o;
+}
+function licNorm(k){return String(k||'').toUpperCase().replace(/[^A-Z0-9]/g,'');}
+function licValid(k){
+  var n=licNorm(k);
+  if(n.length!==15||n.slice(0,3)!=='HWP')return false;
+  for(var i=3;i<n.length;i++)if(LALPHA.indexOf(n[i])<0)return false;
+  return licCheck(n.slice(3,11))===n.slice(11);
+}
+function licFmt(k){var n=licNorm(k);return n.slice(0,3)+'-'+n.slice(3,7)+'-'+n.slice(7,11)+'-'+n.slice(11);}
+function licGet(){try{return localStorage.getItem(LIC_KEY)||localStorage.getItem(GR_KEY)||'';}catch(e){return '';}}
+function licSet(k){try{if(k)localStorage.setItem(LIC_KEY,k);else{localStorage.removeItem(LIC_KEY);localStorage.removeItem(GR_KEY);}}catch(e){}}
+function isPro(){var g='';try{g=localStorage.getItem(GR_KEY)||'';}catch(e){}return licValid(licGet())||GR_RE.test(g);}
+function grVerify(key){
+  var body='product_id='+encodeURIComponent(GR_PRODUCT)+'&license_key='+encodeURIComponent(key)+'&increment_uses_count=false';
+  return fetch('https://api.gumroad.com/v2/licenses/verify',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body}).then(function(r){return r.json();}).then(function(j){
+    if(!j||!j.success)return 'bad';
+    var pu=j.purchase||{};
+    if(pu.refunded||pu.chargebacked||pu.disputed)return 'refunded';
+    return 'ok';
+  });
+}
+function pro(feature){
+  if(isPro())return true;
+  openUpgradeModal(feature);return false;
+}
+function openUpgradeModal(feature){
+  var inp=h('input',{type:'text',id:'lic-in',placeholder:'Paste your licence key',autocomplete:'off',spellcheck:'false','aria-label':'Licence key'});
+  var err=h('p',{class:'err',role:'alert'});
+  var actions=[h('button',{class:'btn',type:'button',text:'Not now',onclick:closeModal})];
+  if(BUY_URL)actions.push(h('a',{class:'btn',href:BUY_URL,target:'_blank',rel:'noopener',text:'Get Pro'}));
+  actions.push(h('button',{class:'btn primary',type:'button','data-primary':'1',text:'Activate',onclick:function(){
+    var raw=inp.value.trim(),n=licNorm(raw);
+    if(licValid(raw)){licSet(licFmt(raw));closeModal();render();toast('Pro is unlocked. Thank you!');return;}
+    var g=raw.toUpperCase().replace(/\s+/g,'');
+    if(!GR_RE.test(g)){err.textContent='That key does not look right. Check it and try again.';return;}
+    err.textContent='Checking your key…';
+    grVerify(g).then(function(res){
+      if(res==='ok'){try{localStorage.setItem(GR_KEY,g);}catch(e){}closeModal();render();toast('Pro is unlocked. Thank you!');}
+      else if(res==='refunded')err.textContent='That purchase was refunded, so the key no longer works.';
+      else err.textContent='That key was not found. Check it and try again.';
+    }).catch(function(){err.textContent='Could not reach the licence server. Check your connection and try again.';});
+  }}));
+  var body=h('div',{},
+    feature?h('p',{class:'hint',text:feature+' is part of Pro.'}):null,
+    h('p',{text:'Free covers one week, up to '+FREE.kids+' children, '+FREE.adults+' adults and '+FREE.lessons+' lesson types.'}),
+    h('p',{text:'Pro is a one-time purchase and unlocks:'}),
+    h('ul',{},['Unlimited weeks, people and lessons','Print, and save as PDF or picture','Share link','Availability and one-off events','Use for later weeks and all templates'].map(function(x){return h('li',{text:x});})),
+    BUY_URL?null:h('p',{class:'hint',text:'The store link is coming soon. If you already have a key, enter it below.'}),
+    fld('Licence key',inp),err);
+  openModal('Unlock Pro',body,actions);
+}
+function proBadge(btn){if(!isPro())btn.append(h('span',{class:'probadge',text:'PRO'}));return btn;}
+
+var HELP=[
+ ['Getting started',['The first time you open the planner, a welcome box asks for your children and adults and offers a starting week. You can skip it and set up later.','Everything you do is saved automatically in this browser.']],
+ ['Lessons (the blocks on the left)',['Tap + lesson to make a block with a name, length and colour. Drag a block onto the week to place it.','Tap a placed lesson to edit it, change its note, or delete it.','Choose a person to see only their lessons.']],
+ ['People',['Open People to add, rename, recolour or remove children and adults. Each lesson uses its person’s colour.']],
+ ['Availability and one-off events (Pro)',['Availability shows when someone is busy, such as an adult at work. The planner warns you about clashes.','A one-off event is for something that happens only this week, such as a trip. It stays put when you copy lessons to other weeks.']],
+ ['Weeks (Pro)',['Use the arrows or Jump to to move between weeks. Use for later weeks copies this week’s lessons onto all later weeks.','Free covers the current week.']],
+ ['Printing and saving (Pro)',['Print opens a preview. Choose a person or the whole family, then save a landscape PDF, a picture, or a list of lessons per day.','In some places the browser blocks direct printing, so the planner saves a PDF you can open and print.']],
+ ['Backup and sharing',['Backup saves a file with your whole plan. Open it later, or on another device, to restore it.','Save or share (Pro) can also make a link that holds your plan. Anyone with the link can open a copy. It only works when the planner is opened from a real web address.']],
+ ['Settings',['Choose the first day of the week (Monday, Saturday or Sunday), the date style and 12 or 24-hour time.']],
+ ['Free and Pro',['Free: one week, up to '+FREE.kids+' children, '+FREE.adults+' adults and '+FREE.lessons+' lesson types.','Pro: a one-time purchase that removes the limits and unlocks printing, sharing, availability, one-offs, later weeks and templates. Enter your key under Settings.']],
+ ['Privacy',['Your plan stays in your browser. Nothing is sent to a server. Clearing your browser data removes it, so use Backup now and then.']]
+];
+function openHelpModal(){
+  var box=h('div',{class:'helpbox'});
+  HELP.forEach(function(sec,i){
+    var d=h('details',{},h('summary',{text:sec[0]}));
+    sec[1].forEach(function(x){d.append(h('p',{text:x}));});
+    if(i===0)d.open=true;
+    box.append(d);
+  });
+  openModal('Help and guide',box,[h('button',{class:'btn primary',type:'button','data-primary':'1',text:'Close',onclick:closeModal})]);
 }
 
 function openKidsModal(){
@@ -1305,6 +1412,7 @@ function openKidsModal(){
         if(seen[ck(n)]){err.textContent='Two people are called '+n+'. Use different names.';return;}
         seen[ck(n)]=1;final.push({r:r,n:n});
       }
+      if(!isPro()){var nk=final.filter(function(f){return !f.r.adult;}).length,na=final.length-nk;var ok0=S.kids.filter(function(k){return !k.adult;}).length,oa0=S.kids.length-ok0;if((nk>FREE.kids&&nk>ok0)||(na>FREE.adults&&na>oa0)){closeModal();openUpgradeModal('More than '+FREE.kids+' children or '+FREE.adults+' adults');return;}}
       commit(function(){
         rows.forEach(function(r){
           if(!r.orig)return;
@@ -1796,7 +1904,12 @@ function openSettingsModal(){
   var tf=h('select',{id:'s-tf'},opts([['12','12-hour (2:30pm)'],['24','24-hour (14:30)']],H24?'24':'12'));
   var body=h('div',{},
     h('p',{class:'hint',text:'Choose how the week and times look. Your lessons stay on the same days of the week.'}),
-    fld('Week starts on',ws),fld('Date format',df),fld('Time format',tf));
+    fld('Week starts on',ws),fld('Date format',df),fld('Time format',tf),
+    h('div',{class:'prostat'},isPro()?
+      [h('strong',{text:'Pro is active'}),h('p',{class:'hint',text:'Key '+licGet()}),
+        h('button',{class:'btn small',type:'button',text:'Remove key from this browser',onclick:function(){licSet('');closeModal();render();toast('Key removed. Back to Free.');}})]:
+      [h('strong',{text:'Free version'}),h('p',{class:'hint',text:'One week, '+FREE.kids+' children, '+FREE.adults+' adults, '+FREE.lessons+' lesson types.'}),
+        h('button',{class:'btn small primary',type:'button',text:'Unlock Pro',onclick:function(){closeModal();openUpgradeModal('');}})]));
   openModal('Settings',body,[
     h('button',{class:'btn',type:'button',text:'Cancel',onclick:closeModal}),
     h('button',{class:'btn primary',type:'button','data-primary':'1',text:'Save',onclick:function(){
@@ -1817,8 +1930,8 @@ var TEMPLATES=[
   ['blank','Blank week','Common subjects ready to drag in. No lessons placed yet.'],
   ['example','Example family week','A full week with group lessons, travel, a one-off event and a parent at work.'],
   ['morning','Mornings only','Maths, English, science or history and reading, finished by lunch.'],
-  ['coop','Four days at home, co-op day','Core lessons Monday to Thursday and a co-op day on Friday.'],
-  ['cm','Short lessons, Charlotte Mason style','Short 30-minute lessons, with a nature walk and handicrafts in the afternoon.']
+  ['coop','Four days at home, co-op day (Pro)','Core lessons Monday to Thursday and a co-op day on Friday.'],
+  ['cm','Short lessons, Charlotte Mason style (Pro)','Short 30-minute lessons, with a nature walk and handicrafts in the afternoon.']
 ];
 function buildPlan(kind,kidNames,adultNames){
   var kids=kidNames.map(function(n,i){return {id:uid(),name:n,c:KIDCOL[i%KIDCOL.length]};}).concat(adultNames.map(function(n,i){return {id:uid(),name:n,c:ADCOL[i%ADCOL.length],adult:true};}));
@@ -1885,6 +1998,7 @@ function openTemplateModal(){
   openModal('Start from a template',body,[
     h('button',{class:'btn',type:'button',text:'Cancel',onclick:closeModal}),
     h('button',{class:'btn primary',type:'button','data-primary':'1',text:'Use template',onclick:function(){
+      if(!pro('Templates'))return;
       var kids=S.kids.filter(function(k){return !k.adult;}).map(function(k){return k.name;});
       var ads=S.kids.filter(function(k){return k.adult;}).map(function(k){return k.name;});
       var p=buildPlan(sel.value,kids,ads);
@@ -1923,8 +2037,10 @@ function openWelcomeModal(){
     h('button',{class:'btn',type:'button',text:'Skip',onclick:closeModal}),
     h('button',{class:'btn primary',type:'button','data-primary':'1',text:'Start planning',onclick:function(){
       var kidNames=splitNames(kidsTa.value,['Child 1']).slice(0,12),adNames=splitNames(adTa.value,['Adult 1']).slice(0,6);
+      if(!isPro()&&(kidNames.length>FREE.kids||adNames.length>FREE.adults)){toast('Free covers '+FREE.kids+' children and '+FREE.adults+' adults. Enter fewer names, or unlock Pro in Settings.');return;}
       var all=kidNames.concat(adNames),seen={};
       for(var i=0;i<all.length;i++){if(seen[ck(all[i])]){toast('Two people are called '+all[i]+'. Use different names.');return;}seen[ck(all[i])]=1;}
+      if(!isPro()&&(sel.value==='coop'||sel.value==='cm')){toast('That template is Pro. Choose another to start.');return;}
       applyWS(+ws.value);
       var p=buildPlan(sel.value,kidNames,adNames);
       var ds=iso(mondayOf(new Date()));
