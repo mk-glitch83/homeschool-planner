@@ -71,4 +71,8 @@ a.l{color:var(--acc)}
 </section></main>
 <footer><div class="wrap">Homeschool Week Planner &middot; Made by a homeschooling family</div></footer>
 <script>try{if(location.hash.indexOf('#plan=')===0)location.replace('app.html'+location.hash);}catch(e){}</script>
+<script>function hwpEvt(n){try{if(window.goatcounter&&window.goatcounter.count)window.goatcounter.count({path:n,title:n,event:true});}catch(e){}}
+document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a');if(!a)return;var h=a.getAttribute('href')||'';if(h.indexOf('gumroad.com')>-1)hwpEvt('landing-click-get-pro');else if(h==='app.html')hwpEvt('landing-click-open-planner');});
+</script>
+<script data-goatcounter="https://mebplanner.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 </body></html>
